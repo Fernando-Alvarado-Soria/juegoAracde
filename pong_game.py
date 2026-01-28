@@ -16,6 +16,8 @@ class Colors:
     DARK_BLUE = (15, 15, 35)
     BLUE_GRAY = (26, 26, 62)
     GRAY = (170, 170, 170)
+    GREEN = (50, 205, 50)
+    ORANGE = (255, 165, 0)
 
 class PongGame:
     def __init__(self):
@@ -57,10 +59,14 @@ class PongGame:
             self.font_small = pygame.font.Font(None, 18)
         
         # Estado del juego
-        self.game_state = "waiting"  # waiting, playing, paused, game_over
+        self.game_state = "difficulty_menu"  # difficulty_menu, waiting, playing, paused, game_over
         self.player_score = 0
         self.cpu_score = 0
         self.max_score = 5
+        
+        # Dificultad
+        self.difficulty = None  # 'easy', 'medium', 'hard'
+        self.selected_difficulty = 0  # 0: Fácil, 1: Medio, 2: Difícil
         
         # Controles
         self.keys = pygame.key.get_pressed()
@@ -74,6 +80,43 @@ class PongGame:
             'wall': None,
             'score': None
         }
+        
+        # Power-ups
+        self.powerups = []
+        self.powerup_spawn_timer = 0
+        self.powerup_spawn_interval = 300  # MODIFICAR AQUÍ: Cada cuántos frames aparece un power-up (300 = 5 segundos a 60 FPS)
+        
+        # Estados de power-ups activos
+        self.player_frozen = False
+        self.player_frozen_timer = 0
+        self.player_frozen_duration = 180  # MODIFICAR AQUÍ: Duración del congelamiento en frames (180 = 3 segundos a 60 FPS)
+        
+        self.cpu_frozen = False
+        self.cpu_frozen_timer = 0
+        self.cpu_frozen_duration = 180  # MODIFICAR AQUÍ: Duración del congelamiento en frames (180 = 3 segundos a 60 FPS)
+        
+        self.multi_ball_active = False
+        self.multi_ball_timer = 0
+        self.multi_ball_duration = 600  # MODIFICAR AQUÍ: Duración de pelotas múltiples en frames (600 = 10 segundos a 60 FPS)
+        self.extra_balls = []  # Lista de pelotas adicionales
+        self.multi_ball_count = 2  # MODIFICAR AQUÍ: Número de pelotas adicionales (2 o 3)
+        
+    def set_difficulty(self, difficulty):
+        """Configura la dificultad del juego"""
+        self.difficulty = difficulty
+        
+        if difficulty == 'easy':
+            self.cpu['speed'] = 4.5
+            self.cpu['reaction_delay'] = 10
+            self.cpu['prediction'] = 0.3
+        elif difficulty == 'medium':
+            self.cpu['speed'] = 6
+            self.cpu['reaction_delay'] = 5
+            self.cpu['prediction'] = 0.6
+        elif difficulty == 'hard':
+            self.cpu['speed'] = 7.5
+            self.cpu['reaction_delay'] = 2
+            self.cpu['prediction'] = 0.9
         
     def init_game_objects(self):
         # Paleta del jugador
@@ -93,7 +136,9 @@ class PongGame:
             'width': 10,
             'height': 100,
             'speed': 3,
-            'color': Colors.RED
+            'color': Colors.RED,
+            'reaction_delay': 10,
+            'prediction': 0.5
         }
         
         # Pelota
@@ -101,10 +146,11 @@ class PongGame:
             'x': self.SCREEN_WIDTH // 2,
             'y': self.SCREEN_HEIGHT // 2,
             'radius': 8,
-            'speed_x': 4,
-            'speed_y': 3,
+            'speed_x': 5,
+            'speed_y': 4,
             'color': Colors.WHITE,
-            'trail': []
+            'trail': [],
+            'max_speed': 12
         }
         
         self.reset_ball()
@@ -112,9 +158,54 @@ class PongGame:
     def reset_ball(self):
         self.ball['x'] = self.SCREEN_WIDTH // 2
         self.ball['y'] = self.SCREEN_HEIGHT // 2
-        self.ball['speed_x'] = random.choice([4, -4])
-        self.ball['speed_y'] = random.uniform(-3, 3)
+        self.ball['speed_x'] = random.choice([5, -5])
+        self.ball['speed_y'] = random.uniform(-4, 4)
         self.ball['trail'] = []
+    
+    def spawn_powerup(self):
+        """Crea un nuevo power-up en una posición aleatoria"""
+        powerup_types = [
+            {'type': 'freeze_player', 'color': Colors.CYAN, 'symbol': 'FP'},
+            {'type': 'freeze_cpu', 'color': Colors.RED, 'symbol': 'FC'},
+            {'type': 'multi_ball', 'color': Colors.ORANGE, 'symbol': 'MB'}
+        ]
+        
+        powerup = random.choice(powerup_types).copy()
+        powerup['x'] = random.randint(200, self.SCREEN_WIDTH - 200)
+        powerup['y'] = random.randint(50, self.SCREEN_HEIGHT - 50)
+        powerup['radius'] = 15
+        powerup['lifetime'] = 300  # MODIFICAR AQUÍ: Tiempo que dura el power-up en pantalla antes de desaparecer (300 = 5 segundos)
+        
+        self.powerups.append(powerup)
+    
+    def activate_powerup(self, powerup_type):
+        """Activa un power-up específico"""
+        if powerup_type == 'freeze_player':
+            self.player_frozen = True
+            self.player_frozen_timer = self.player_frozen_duration
+        elif powerup_type == 'freeze_cpu':
+            self.cpu_frozen = True
+            self.cpu_frozen_timer = self.cpu_frozen_duration
+        elif powerup_type == 'multi_ball':
+            if not self.multi_ball_active:
+                self.multi_ball_active = True
+                self.multi_ball_timer = self.multi_ball_duration
+                # Crear pelotas adicionales
+                self.extra_balls = []
+                for i in range(self.multi_ball_count):
+                    new_ball = self.ball.copy()
+                    new_ball['speed_x'] = random.choice([5, -5]) * random.uniform(0.8, 1.2)
+                    new_ball['speed_y'] = random.uniform(-5, 5)
+                    new_ball['trail'] = []
+                    self.extra_balls.append(new_ball)
+    
+    def check_powerup_collision(self):
+        """Verifica si la pelota toca un power-up"""
+        for powerup in self.powerups[:]:
+            distance = math.sqrt((self.ball['x'] - powerup['x'])**2 + (self.ball['y'] - powerup['y'])**2)
+            if distance < self.ball['radius'] + powerup['radius']:
+                self.activate_powerup(powerup['type'])
+                self.powerups.remove(powerup)
         
     def handle_events(self):
         for event in pygame.event.get():
@@ -122,7 +213,19 @@ class PongGame:
                 return False
                 
             if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_SPACE:
+                # Menú de dificultad
+                if self.game_state == "difficulty_menu":
+                    if event.key == pygame.K_UP:
+                        self.selected_difficulty = (self.selected_difficulty - 1) % 3
+                    elif event.key == pygame.K_DOWN:
+                        self.selected_difficulty = (self.selected_difficulty + 1) % 3
+                    elif event.key == pygame.K_RETURN or event.key == pygame.K_SPACE:
+                        difficulties = ['easy', 'medium', 'hard']
+                        self.set_difficulty(difficulties[self.selected_difficulty])
+                        self.game_state = "waiting"
+                
+                # Juego normal
+                elif event.key == pygame.K_SPACE:
                     self.toggle_pause()
                 elif event.key == pygame.K_r:
                     self.reset_game()
@@ -136,20 +239,73 @@ class PongGame:
         # Actualizar controles
         self.keys = pygame.key.get_pressed()
         
-        # Movimiento del jugador
-        if self.keys[pygame.K_UP] and self.player['y'] > 0:
-            self.player['y'] -= self.player['speed']
-        if self.keys[pygame.K_DOWN] and self.player['y'] < self.SCREEN_HEIGHT - self.player['height']:
-            self.player['y'] += self.player['speed']
-            
-        # IA de la CPU
-        cpu_center = self.cpu['y'] + self.cpu['height'] // 2
-        ball_y = self.ball['y']
+        # Actualizar timers de power-ups
+        if self.player_frozen:
+            self.player_frozen_timer -= 1
+            if self.player_frozen_timer <= 0:
+                self.player_frozen = False
         
-        if cpu_center < ball_y - 10:
-            self.cpu['y'] += self.cpu['speed']
-        elif cpu_center > ball_y + 10:
-            self.cpu['y'] -= self.cpu['speed']
+        if self.cpu_frozen:
+            self.cpu_frozen_timer -= 1
+            if self.cpu_frozen_timer <= 0:
+                self.cpu_frozen = False
+        
+        if self.multi_ball_active:
+            self.multi_ball_timer -= 1
+            if self.multi_ball_timer <= 0:
+                self.multi_ball_active = False
+                self.extra_balls = []
+        
+        # Spawn de power-ups
+        self.powerup_spawn_timer += 1
+        if self.powerup_spawn_timer >= self.powerup_spawn_interval:
+            self.spawn_powerup()
+            self.powerup_spawn_timer = 0
+        
+        # Actualizar lifetime de power-ups
+        for powerup in self.powerups[:]:
+            powerup['lifetime'] -= 1
+            if powerup['lifetime'] <= 0:
+                self.powerups.remove(powerup)
+        
+        # Verificar colisión con power-ups
+        self.check_powerup_collision()
+        
+        # Movimiento del jugador (solo si no está congelado)
+        if not self.player_frozen:
+            if self.keys[pygame.K_UP] and self.player['y'] > 0:
+                self.player['y'] -= self.player['speed']
+            if self.keys[pygame.K_DOWN] and self.player['y'] < self.SCREEN_HEIGHT - self.player['height']:
+                self.player['y'] += self.player['speed']
+            
+        # IA de la CPU mejorada con predicción (solo si no está congelado)
+        if not self.cpu_frozen:
+            cpu_center = self.cpu['y'] + self.cpu['height'] // 2
+            
+            # Predecir posición futura de la pelota
+            if self.ball['speed_x'] > 0:  # Pelota viene hacia CPU
+                frames_to_reach = (self.cpu['x'] - self.ball['x']) / self.ball['speed_x']
+                predicted_y = self.ball['y'] + (self.ball['speed_y'] * frames_to_reach * self.cpu['prediction'])
+                
+                # Ajustar predicción por rebotes en bordes
+                while predicted_y < 0 or predicted_y > self.SCREEN_HEIGHT:
+                    if predicted_y < 0:
+                        predicted_y = abs(predicted_y)
+                    elif predicted_y > self.SCREEN_HEIGHT:
+                        predicted_y = self.SCREEN_HEIGHT - (predicted_y - self.SCREEN_HEIGHT)
+                
+                target_y = predicted_y
+            else:
+                target_y = self.SCREEN_HEIGHT // 2  # Volver al centro
+            
+            # Mover CPU hacia la posición objetivo
+            reaction_distance = self.cpu['reaction_delay'] * 15
+            if abs(self.ball['x'] - self.cpu['x']) < reaction_distance or self.ball['speed_x'] > 0:
+                tolerance = 15
+                if cpu_center < target_y - tolerance:
+                    self.cpu['y'] += self.cpu['speed']
+                elif cpu_center > target_y + tolerance:
+                    self.cpu['y'] -= self.cpu['speed']
             
         # Mantener CPU en pantalla
         if self.cpu['y'] < 0:
@@ -157,7 +313,7 @@ class PongGame:
         if self.cpu['y'] > self.SCREEN_HEIGHT - self.cpu['height']:
             self.cpu['y'] = self.SCREEN_HEIGHT - self.cpu['height']
             
-        # Movimiento de la pelota
+        # Movimiento de la pelota principal
         self.ball['x'] += self.ball['speed_x']
         self.ball['y'] += self.ball['speed_y']
         
@@ -173,6 +329,32 @@ class PongGame:
             
         # Colisiones con paletas
         self.check_paddle_collisions()
+        
+        # Actualizar pelotas adicionales
+        for extra_ball in self.extra_balls[:]:
+            extra_ball['x'] += extra_ball['speed_x']
+            extra_ball['y'] += extra_ball['speed_y']
+            
+            # Trail de pelotas extras
+            extra_ball['trail'].append((extra_ball['x'], extra_ball['y']))
+            if len(extra_ball['trail']) > 10:
+                extra_ball['trail'].pop(0)
+            
+            # Colisiones con bordes
+            if (extra_ball['y'] - extra_ball['radius'] <= 0 or 
+                extra_ball['y'] + extra_ball['radius'] >= extra_ball['radius']):
+                extra_ball['speed_y'] = -extra_ball['speed_y']
+            
+            # Colisiones con paletas para pelotas extras
+            self.check_paddle_collisions_extra(extra_ball)
+            
+            # Verificar puntos con pelotas extras
+            if extra_ball['x'] < 0:
+                self.cpu_score += 1
+                self.extra_balls.remove(extra_ball)
+            elif extra_ball['x'] > self.SCREEN_WIDTH:
+                self.player_score += 1
+                self.extra_balls.remove(extra_ball)
         
         # Verificar puntos
         if self.ball['x'] < 0:
@@ -211,19 +393,60 @@ class PongGame:
         
         # Colisión con paleta del jugador
         if ball_rect.colliderect(player_rect) and self.ball['speed_x'] < 0:
-            self.ball['speed_x'] = abs(self.ball['speed_x'])
+            self.ball['speed_x'] = abs(self.ball['speed_x']) * 1.05  # Acelerar ligeramente
             
             # Calcular ángulo basado en dónde golpeó
             hit_pos = (self.ball['y'] - self.player['y']) / self.player['height']
-            self.ball['speed_y'] = (hit_pos - 0.5) * 8
+            self.ball['speed_y'] = (hit_pos - 0.5) * 10
+            
+            # Limitar velocidad máxima
+            if abs(self.ball['speed_x']) > self.ball['max_speed']:
+                self.ball['speed_x'] = self.ball['max_speed'] if self.ball['speed_x'] > 0 else -self.ball['max_speed']
             
         # Colisión con paleta de la CPU
         if ball_rect.colliderect(cpu_rect) and self.ball['speed_x'] > 0:
-            self.ball['speed_x'] = -abs(self.ball['speed_x'])
+            self.ball['speed_x'] = -abs(self.ball['speed_x']) * 1.05  # Acelerar ligeramente
             
             # Calcular ángulo basado en dónde golpeó
             hit_pos = (self.ball['y'] - self.cpu['y']) / self.cpu['height']
-            self.ball['speed_y'] = (hit_pos - 0.5) * 8
+            self.ball['speed_y'] = (hit_pos - 0.5) * 10
+            
+            # Limitar velocidad máxima
+            if abs(self.ball['speed_x']) > self.ball['max_speed']:
+                self.ball['speed_x'] = self.ball['max_speed'] if self.ball['speed_x'] > 0 else -self.ball['max_speed']
+    
+    def check_paddle_collisions_extra(self, ball):
+        """Verifica colisiones para pelotas adicionales"""
+        ball_rect = pygame.Rect(
+            ball['x'] - ball['radius'],
+            ball['y'] - ball['radius'],
+            ball['radius'] * 2,
+            ball['radius'] * 2
+        )
+        
+        player_rect = pygame.Rect(
+            self.player['x'],
+            self.player['y'],
+            self.player['width'],
+            self.player['height']
+        )
+        
+        cpu_rect = pygame.Rect(
+            self.cpu['x'],
+            self.cpu['y'],
+            self.cpu['width'],
+            self.cpu['height']
+        )
+        
+        if ball_rect.colliderect(player_rect) and ball['speed_x'] < 0:
+            ball['speed_x'] = abs(ball['speed_x']) * 1.05
+            hit_pos = (ball['y'] - self.player['y']) / self.player['height']
+            ball['speed_y'] = (hit_pos - 0.5) * 10
+            
+        if ball_rect.colliderect(cpu_rect) and ball['speed_x'] > 0:
+            ball['speed_x'] = -abs(ball['speed_x']) * 1.05
+            hit_pos = (ball['y'] - self.cpu['y']) / self.cpu['height']
+            ball['speed_y'] = (hit_pos - 0.5) * 10
             
     def draw_glow_rect(self, surface, color, rect, glow_size=5):
         """Dibuja un rectángulo con efecto de resplandor"""
@@ -251,8 +474,74 @@ class PongGame:
         
         # Dibujar el círculo principal
         pygame.draw.circle(surface, color, center, radius)
+    
+    def render_difficulty_menu(self):
+        """Renderiza el menú de selección de dificultad"""
+        # Fondo con gradiente
+        for y in range(self.SCREEN_HEIGHT):
+            color_ratio = y / self.SCREEN_HEIGHT
+            r = int(Colors.DARK_BLUE[0] * (1 - color_ratio) + Colors.BLUE_GRAY[0] * color_ratio)
+            g = int(Colors.DARK_BLUE[1] * (1 - color_ratio) + Colors.BLUE_GRAY[1] * color_ratio)
+            b = int(Colors.DARK_BLUE[2] * (1 - color_ratio) + Colors.BLUE_GRAY[2] * color_ratio)
+            pygame.draw.line(self.screen, (r, g, b), (0, y), (self.SCREEN_WIDTH, y))
+        
+        # Título
+        title = self.font_large.render("SELECCIONA DIFICULTAD", True, Colors.CYAN)
+        title_x = (self.SCREEN_WIDTH - title.get_width()) // 2
+        self.screen.blit(title, (title_x, 50))
+        
+        # Opciones de dificultad
+        difficulties = [
+            {"name": "FÁCIL", "color": Colors.GREEN, "desc": "CPU más lento y predecible"},
+            {"name": "MEDIO", "color": Colors.ORANGE, "desc": "CPU con velocidad moderada"},
+            {"name": "DIFÍCIL", "color": Colors.RED, "desc": "CPU rápido y agresivo"}
+        ]
+        
+        start_y = 150
+        spacing = 80
+        
+        for i, diff in enumerate(difficulties):
+            y_pos = start_y + (i * spacing)
+            
+            # Resaltar opción seleccionada
+            if i == self.selected_difficulty:
+                # Rectángulo de selección con resplandor
+                rect = pygame.Rect(
+                    self.SCREEN_WIDTH // 2 - 200,
+                    y_pos - 10,
+                    400,
+                    60
+                )
+                self.draw_glow_rect(self.screen, diff["color"], rect, glow_size=8)
+            
+            # Nombre de la dificultad
+            text = self.font_large.render(diff["name"], True, 
+                                         Colors.WHITE if i == self.selected_difficulty else diff["color"])
+            text_x = (self.SCREEN_WIDTH - text.get_width()) // 2
+            self.screen.blit(text, (text_x, y_pos))
+            
+            # Descripción
+            desc = self.font_small.render(diff["desc"], True, Colors.GRAY)
+            desc_x = (self.SCREEN_WIDTH - desc.get_width()) // 2
+            self.screen.blit(desc, (desc_x, y_pos + 30))
+        
+        # Instrucciones
+        instructions = [
+            "↑ ↓ - Seleccionar dificultad",
+            "ENTER/ESPACIO - Confirmar"
+        ]
+        
+        for i, instruction in enumerate(instructions):
+            text = self.font_small.render(instruction, True, Colors.GRAY)
+            text_x = (self.SCREEN_WIDTH - text.get_width()) // 2
+            self.screen.blit(text, (text_x, self.SCREEN_HEIGHT - 50 + (i * 20)))
         
     def render(self):
+        # Menú de dificultad
+        if self.game_state == "difficulty_menu":
+            self.render_difficulty_menu()
+            return
+        
         # Fondo con gradiente
         for y in range(self.SCREEN_HEIGHT):
             color_ratio = y / self.SCREEN_HEIGHT
@@ -291,12 +580,88 @@ class PongGame:
                              (int(self.ball['x']), int(self.ball['y'])), 
                              self.ball['radius'])
         
+        # Pelotas adicionales
+        for extra_ball in self.extra_balls:
+            # Trail de pelota extra
+            for i, (x, y) in enumerate(extra_ball['trail']):
+                alpha = (i + 1) / len(extra_ball['trail']) * 100
+                if alpha > 0:
+                    trail_surf = pygame.Surface((extra_ball['radius'] * 2, extra_ball['radius'] * 2))
+                    trail_surf.set_alpha(int(alpha))
+                    pygame.draw.circle(trail_surf, Colors.ORANGE, 
+                                     (extra_ball['radius'], extra_ball['radius']), 
+                                     int(extra_ball['radius'] * ((i + 1) / len(extra_ball['trail']))))
+                    self.screen.blit(trail_surf, (x - extra_ball['radius'], y - extra_ball['radius']))
+            
+            self.draw_glow_circle(self.screen, Colors.ORANGE, 
+                                 (int(extra_ball['x']), int(extra_ball['y'])), 
+                                 extra_ball['radius'])
+        
+        # Dibujar power-ups
+        for powerup in self.powerups:
+            # Efecto pulsante
+            pulse = math.sin(pygame.time.get_ticks() / 200) * 3
+            radius = powerup['radius'] + pulse
+            
+            # Círculo del power-up con resplandor
+            self.draw_glow_circle(self.screen, powerup['color'], 
+                                 (int(powerup['x']), int(powerup['y'])), 
+                                 int(radius), glow_size=15)
+            
+            # Símbolo del power-up
+            symbol_text = self.font_small.render(powerup['symbol'], True, Colors.WHITE)
+            symbol_x = powerup['x'] - symbol_text.get_width() // 2
+            symbol_y = powerup['y'] - symbol_text.get_height() // 2
+            self.screen.blit(symbol_text, (int(symbol_x), int(symbol_y)))
+        
         # Marcador
         player_text = self.font_large.render(f"Jugador: {self.player_score}", True, Colors.CYAN)
         cpu_text = self.font_large.render(f"CPU: {self.cpu_score}", True, Colors.RED)
         
         self.screen.blit(player_text, (20, 20))
         self.screen.blit(cpu_text, (self.SCREEN_WIDTH - cpu_text.get_width() - 20, 20))
+        
+        # Mostrar dificultad actual
+        diff_names = {"easy": "FÁCIL", "medium": "MEDIO", "hard": "DIFÍCIL"}
+        diff_colors = {"easy": Colors.GREEN, "medium": Colors.ORANGE, "hard": Colors.RED}
+        if self.difficulty:
+            diff_text = self.font_small.render(f"Dificultad: {diff_names[self.difficulty]}", 
+                                              True, diff_colors[self.difficulty])
+            diff_x = (self.SCREEN_WIDTH - diff_text.get_width()) // 2
+            self.screen.blit(diff_text, (diff_x, 20))
+        
+        # Notificaciones de power-ups activos
+        notification_y = 60
+        if self.player_frozen:
+            freeze_text = self.font_medium.render("⚡ JUGADOR CONGELADO ⚡", True, Colors.CYAN)
+            freeze_x = (self.SCREEN_WIDTH - freeze_text.get_width()) // 2
+            # Fondo semi-transparente
+            freeze_bg = pygame.Surface((freeze_text.get_width() + 20, freeze_text.get_height() + 10))
+            freeze_bg.set_alpha(180)
+            freeze_bg.fill(Colors.DARK_BLUE)
+            self.screen.blit(freeze_bg, (freeze_x - 10, notification_y - 5))
+            self.screen.blit(freeze_text, (freeze_x, notification_y))
+            notification_y += 35
+        
+        if self.cpu_frozen:
+            freeze_text = self.font_medium.render("⚡ CPU CONGELADO ⚡", True, Colors.RED)
+            freeze_x = (self.SCREEN_WIDTH - freeze_text.get_width()) // 2
+            freeze_bg = pygame.Surface((freeze_text.get_width() + 20, freeze_text.get_height() + 10))
+            freeze_bg.set_alpha(180)
+            freeze_bg.fill(Colors.DARK_BLUE)
+            self.screen.blit(freeze_bg, (freeze_x - 10, notification_y - 5))
+            self.screen.blit(freeze_text, (freeze_x, notification_y))
+            notification_y += 35
+        
+        if self.multi_ball_active:
+            multi_text = self.font_medium.render("🔥 PELOTAS MÚLTIPLES 🔥", True, Colors.ORANGE)
+            multi_x = (self.SCREEN_WIDTH - multi_text.get_width()) // 2
+            multi_bg = pygame.Surface((multi_text.get_width() + 20, multi_text.get_height() + 10))
+            multi_bg.set_alpha(180)
+            multi_bg.fill(Colors.DARK_BLUE)
+            self.screen.blit(multi_bg, (multi_x - 10, notification_y - 5))
+            self.screen.blit(multi_text, (multi_x, notification_y))
+            notification_y += 35
         
         # Estado del juego
         status_text = ""
@@ -349,7 +714,20 @@ class PongGame:
         self.player_score = 0
         self.cpu_score = 0
         self.init_game_objects()
-        self.game_state = "waiting"
+        if self.difficulty:
+            self.set_difficulty(self.difficulty)
+        self.game_state = "difficulty_menu"
+        self.selected_difficulty = 0
+        # Resetear power-ups
+        self.powerups = []
+        self.powerup_spawn_timer = 0
+        self.player_frozen = False
+        self.player_frozen_timer = 0
+        self.cpu_frozen = False
+        self.cpu_frozen_timer = 0
+        self.multi_ball_active = False
+        self.multi_ball_timer = 0
+        self.extra_balls = []
         
     def run(self):
         running = True
