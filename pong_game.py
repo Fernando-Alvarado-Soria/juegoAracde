@@ -1,5 +1,6 @@
 import pygame
 import sys
+import os
 import math
 import random
 
@@ -28,10 +29,32 @@ class PongGame:
         self.clock = pygame.time.Clock()
         self.FPS = 60
         
-        # Configuración de fuentes
-        self.font_large = pygame.font.Font(None, 36)
-        self.font_medium = pygame.font.Font(None, 24)
-        self.font_small = pygame.font.Font(None, 18)
+        # Configuración de fuentes - Compatible con PyInstaller
+        try:
+            # Determinar la ruta base (funciona tanto en desarrollo como en ejecutable)
+            if hasattr(sys, '_MEIPASS'):
+                # Ruta cuando está empaquetado con PyInstaller
+                base_path = sys._MEIPASS
+            else:
+                # Ruta cuando se ejecuta como script normal
+                base_path = os.path.dirname(os.path.abspath(__file__))
+            
+            # Intentar cargar una fuente personalizada (opcional)
+            font_path = os.path.join(base_path, 'assets', 'font.ttf')
+            if os.path.exists(font_path):
+                self.font_large = pygame.font.Font(font_path, 36)
+                self.font_medium = pygame.font.Font(font_path, 24)
+                self.font_small = pygame.font.Font(font_path, 18)
+            else:
+                # Usar fuente por defecto del sistema
+                self.font_large = pygame.font.Font(None, 36)
+                self.font_medium = pygame.font.Font(None, 24)
+                self.font_small = pygame.font.Font(None, 18)
+        except Exception:
+            # Si hay algún error, usar fuente por defecto
+            self.font_large = pygame.font.Font(None, 36)
+            self.font_medium = pygame.font.Font(None, 24)
+            self.font_small = pygame.font.Font(None, 18)
         
         # Estado del juego
         self.game_state = "waiting"  # waiting, playing, paused, game_over
