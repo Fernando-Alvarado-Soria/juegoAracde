@@ -84,7 +84,7 @@ class PongGame:
         # Power-ups
         self.powerups = []
         self.powerup_spawn_timer = 0
-        self.powerup_spawn_interval = 300  # MODIFICAR AQUÍ: Cada cuántos frames aparece un power-up (300 = 5 segundos a 60 FPS)
+        self.powerup_spawn_interval = 600  # MODIFICAR AQUÍ: Cada cuántos frames aparece un power-up (600 = 10 segundos a 60 FPS)
         
         # Estados de power-ups activos
         self.player_frozen = False
@@ -106,17 +106,17 @@ class PongGame:
         self.difficulty = difficulty
         
         if difficulty == 'easy':
-            self.cpu['speed'] = 4.5
-            self.cpu['reaction_delay'] = 10
-            self.cpu['prediction'] = 0.3
-        elif difficulty == 'medium':
             self.cpu['speed'] = 6
+            self.cpu['reaction_delay'] = 10
+            self.cpu['prediction'] = 1
+        elif difficulty == 'medium':
+            self.cpu['speed'] = 9
             self.cpu['reaction_delay'] = 5
-            self.cpu['prediction'] = 0.6
+            self.cpu['prediction'] = 2
         elif difficulty == 'hard':
-            self.cpu['speed'] = 7.5
-            self.cpu['reaction_delay'] = 2
-            self.cpu['prediction'] = 0.9
+            self.cpu['speed'] = 12
+            self.cpu['reaction_delay'] = 1
+            self.cpu['prediction'] = 4
         
     def init_game_objects(self):
         # Paleta del jugador
@@ -163,20 +163,12 @@ class PongGame:
         self.ball['trail'] = []
     
     def spawn_powerup(self):
-        """Crea un nuevo power-up en una posición aleatoria"""
-        powerup_types = [
-            {'type': 'freeze_player', 'color': Colors.CYAN, 'symbol': 'FP'},
-            {'type': 'freeze_cpu', 'color': Colors.RED, 'symbol': 'FC'},
-            {'type': 'multi_ball', 'color': Colors.ORANGE, 'symbol': 'MB'}
-        ]
+        """Activa un power-up aleatorio automáticamente"""
+        powerup_types = ['freeze_player', 'freeze_cpu', 'multi_ball']
         
-        powerup = random.choice(powerup_types).copy()
-        powerup['x'] = random.randint(200, self.SCREEN_WIDTH - 200)
-        powerup['y'] = random.randint(50, self.SCREEN_HEIGHT - 50)
-        powerup['radius'] = 15
-        powerup['lifetime'] = 300  # MODIFICAR AQUÍ: Tiempo que dura el power-up en pantalla antes de desaparecer (300 = 5 segundos)
-        
-        self.powerups.append(powerup)
+        # Seleccionar y activar un power-up aleatorio
+        selected_powerup = random.choice(powerup_types)
+        self.activate_powerup(selected_powerup)
     
     def activate_powerup(self, powerup_type):
         """Activa un power-up específico"""
@@ -256,20 +248,11 @@ class PongGame:
                 self.multi_ball_active = False
                 self.extra_balls = []
         
-        # Spawn de power-ups
+        # Spawn de power-ups automático cada 10 segundos
         self.powerup_spawn_timer += 1
         if self.powerup_spawn_timer >= self.powerup_spawn_interval:
             self.spawn_powerup()
             self.powerup_spawn_timer = 0
-        
-        # Actualizar lifetime de power-ups
-        for powerup in self.powerups[:]:
-            powerup['lifetime'] -= 1
-            if powerup['lifetime'] <= 0:
-                self.powerups.remove(powerup)
-        
-        # Verificar colisión con power-ups
-        self.check_powerup_collision()
         
         # Movimiento del jugador (solo si no está congelado)
         if not self.player_frozen:
@@ -596,23 +579,6 @@ class PongGame:
             self.draw_glow_circle(self.screen, Colors.ORANGE, 
                                  (int(extra_ball['x']), int(extra_ball['y'])), 
                                  extra_ball['radius'])
-        
-        # Dibujar power-ups
-        for powerup in self.powerups:
-            # Efecto pulsante
-            pulse = math.sin(pygame.time.get_ticks() / 200) * 3
-            radius = powerup['radius'] + pulse
-            
-            # Círculo del power-up con resplandor
-            self.draw_glow_circle(self.screen, powerup['color'], 
-                                 (int(powerup['x']), int(powerup['y'])), 
-                                 int(radius), glow_size=15)
-            
-            # Símbolo del power-up
-            symbol_text = self.font_small.render(powerup['symbol'], True, Colors.WHITE)
-            symbol_x = powerup['x'] - symbol_text.get_width() // 2
-            symbol_y = powerup['y'] - symbol_text.get_height() // 2
-            self.screen.blit(symbol_text, (int(symbol_x), int(symbol_y)))
         
         # Marcador
         player_text = self.font_large.render(f"Jugador: {self.player_score}", True, Colors.CYAN)
