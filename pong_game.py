@@ -25,7 +25,7 @@ class PongGame:
         self.SCREEN_WIDTH = 800
         self.SCREEN_HEIGHT = 400
         self.screen = pygame.display.set_mode((self.SCREEN_WIDTH, self.SCREEN_HEIGHT))
-        pygame.display.set_caption("Pong Arcade - Tu Toque Personal")
+        pygame.display.set_caption("Pong Arcade - Pong Kenny")
         
         # Reloj para controlar FPS
         self.clock = pygame.time.Clock()
